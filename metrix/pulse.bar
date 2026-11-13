@@ -1,4 +1,4 @@
-<bar protocol-version="0" version="1.0.1" id="pulse" title="Pulse for Metrix.Bar"
+<bar protocol-version="0" version="1.0.2" id="pulse" title="Pulse for Metrix.Bar"
      category="finance" description="A stock and crypto watchlist with intraday charts, from Yahoo Finance and Binance."
      license="MIT" homepage="https://github.com/ch1y1z1/Pulse/tree/main/metrix" refresh="1m" material="glass"
      icon="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjEzNCAyMTUgNzU2IDU4MCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJjdXJyZW50Q29sb3IiIHN0cm9rZS13aWR0aD0iNzIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTE3MCA1MTJIMjkyQzMxNiA1MTIgMzI4IDQ3NiAzNDggNDc2QzM3MSA0NzYgMzgzIDUzNyA0MDUgNTM3QzQyNSA1MzcgNDQ0IDQyMyA0OTMgMjc4QzUwMiAyNTEgNTIwIDI1MSA1MjkgMjgwTDYyNyA3MjhDNjM0IDc1OSA2NTQgNzU5IDY2NiA3MzBMNzM4IDUyMEM3NDQgNTAzIDc1NiA0OTggNzc0IDQ5OEg4NTQiLz48L3N2Zz4=">
@@ -237,6 +237,8 @@ function decodeYahoo(symbol, response) {
   const quoteClose = positive(meta.previousClose) ? meta.previousClose
     : positive(meta.regularMarketPreviousClose) ? meta.regularMarketPreviousClose : prior?.[1];
   const period = p => Number.isFinite(p?.start) && Number.isFinite(p?.end) && p.end > p.start ? [p.start * 1000, p.end * 1000] : null;
+  const history = meta.tradingPeriods ?? result.tradingPeriods;
+  const historyRegular = Array.isArray(history) ? history : history?.regular;
   const delay = meta.exchangeDataDelayedBy;
   return {
     symbol, market, source: "Yahoo Finance",
@@ -252,8 +254,7 @@ function decodeYahoo(symbol, response) {
     low: positive(meta.regularMarketDayLow) ? meta.regularMarketDayLow : null,
     volume: positive(meta.regularMarketVolume) ? meta.regularMarketVolume : null,
     gmtoffset, timeZone: meta.exchangeTimezoneName,
-    tradingPeriods: (Array.isArray(result.tradingPeriods) ? result.tradingPeriods : result.tradingPeriods?.regular || [])
-      .flat().map(period).filter(Boolean),
+    tradingPeriods: (Array.isArray(historyRegular) ? historyRegular : []).flat(Infinity).map(period).filter(Boolean),
     periods: {pre: period(meta.currentTradingPeriod?.pre), regular: period(regular), post: period(meta.currentTradingPeriod?.post)},
     points,
   };
@@ -767,11 +768,9 @@ const exchangeTime = (ms, offset) => {
   const d = new Date(ms + offset * 1000);
   return `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`;
 };
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-function staleDate(ms) {
-  const q = new Date(ms), now = new Date();
-  if (q.getFullYear() === now.getFullYear() && q.getMonth() === now.getMonth() && q.getDate() === now.getDate()) return "";
-  return LANG === "zh" ? `${q.getMonth() + 1}月${q.getDate()}日` : `${MONTHS[q.getMonth()]} ${q.getDate()}`;
+function staleDate(q) {
+  const date = exchangeDate(q.timestamp, q);
+  return date === exchangeDate(Date.now(), q) ? "" : date;
 }
 
 function session(q) {
@@ -848,11 +847,22 @@ function offsetAt(ms, q) {
   return q.gmtoffset;
 }
 
-/** Select exactly one session. One valid point today must win over any history. */
+// Refreshes replace quote objects; weak keys release history when a quote is replaced.
+const chartSessions = new WeakMap();
+/** Select exactly one session, once per quote object and exchange calendar day. */
 function chartSession(q) {
+  const today = exchangeDate(Date.now(), q);
+  const cached = chartSessions.get(q);
+  if (cached?.today === today) return cached.chosen;
+  const chosen = selectChartSession(q, today);
+  chartSessions.set(q, {today, chosen});
+  return chosen;
+}
+
+/** One valid point today must win over any history. */
+function selectChartSession(q, today) {
   const raw = (q.points || []).filter(([t, y]) => Number.isFinite(t) && positive(y)).sort((a, b) => a[0] - b[0]);
   if (q.market === "crypto") return {series: raw, regular: null, date: "", baseline: q.previousClose, offset: null};
-  const today = exchangeDate(Date.now(), q);
   const periods = [...(q.tradingPeriods || []), q.periods?.regular].filter(Boolean);
   const periodFor = t => periods.find(([start, end]) => t >= start && t <= end);
   const datesByTime = new Map();
@@ -1035,13 +1045,14 @@ function listView(refresh) {
 
 function detailView(q, refresh) {
   const back = () => { selected = null; $metrix.invalidate(); };
-  const pct = changePercent(q), color = tint(pct), s = session(q), stale = staleDate(q.timestamp);
+  const pct = changePercent(q), color = tint(pct), s = session(q), stale = staleDate(q);
   const stat = (label, value) => h("Column", {gap: 2},
     h("Text", {fontSize: 10.5, textColor: "textMuted"}, label),
     h("Text", {fontSize: 12.5, fontWeight: 600, fontFeatures: "tnum", singleLine: true}, value));
   const range = positive(q.high) && positive(q.low) && positive(q.previousClose) ? `${((q.high - q.low) / q.previousClose * 100).toFixed(2)}%` : "—";
   const delayText = q.delaySeconds > 0 ? T.delayed(Math.round(q.delaySeconds / 60)) : q.delaySeconds === 0 ? T.realtime : "";
-  const quoteTime = q.gmtoffset === null ? localTime(q.timestamp) : exchangeTime(q.timestamp, q.gmtoffset);
+  const quoteTime = exchangeTime(q.timestamp, offsetAt(q.timestamp, q));
+  const chart = chartSession(q);
   const section = title => h("Text", {fontSize: 11.5, fontWeight: 600, textColor: "textMuted"}, title);
   return h("Column", {grow: 1, minHeight: 0, fillWidth: true},
     h("Row", {alignItems: "center", gap: 6, paddingLeft: 8, paddingRight: 8, paddingTop: 14, paddingBottom: 6},
@@ -1070,7 +1081,7 @@ function detailView(q, refresh) {
             h("Text", {fontSize: 10.5, textColor: "textMuted"}, delayText ? `${q.source} · ${delayText}` : q.source),
             h("Text", {fontSize: 10.5, textColor: "textMuted", fontFeatures: "tnum"}, T.asOf(stale ? `${stale} ${quoteTime}` : quoteTime)))),
         h("Divider", {}),
-        section(q.market === "crypto" ? T.last24h : chartSession(q).date ? `${T.intraday} · ${chartSession(q).date}` : T.intraday),
+        section(q.market === "crypto" ? T.last24h : chart.date ? `${T.intraday} · ${chart.date}` : T.intraday),
         sparkline(q, color, 150, true),
         h("Divider", {}),
         section(T.marketData),

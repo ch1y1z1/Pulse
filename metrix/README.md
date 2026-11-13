@@ -4,7 +4,7 @@ A [Metrix.Bar](https://metrix.bar) stock and crypto watchlist in your menu bar.
 This [fork](https://github.com/ch1y1z1/Pulse) of [fatwang2/Pulse](https://github.com/fatwang2/Pulse)
 removes the promotional footer, detail card, menu item and tracking links, and
 fixes charts before the market opens. It keeps the Pulse name, `id=pulse`,
-MIT license and original attribution. Version 1.0.1 replaces 1.0.0.
+MIT license and original attribution. Version 1.0.2 replaces 1.0.1.
 
 Each ticker shows its price, change and a single trading day's line; click one
 for its day: a chart, the open, high,
@@ -53,7 +53,9 @@ limit, Pulse installs disabled until you remove one or upgrade.
 
 Quotes refresh every minute. Stock prices are Yahoo's regular-session quotes;
 exchange delays vary and are shown when Yahoo reports them. Crypto changes and
-lines are 24-hour. A quote from an earlier day carries its date. The interface
+lines are 24-hour. A quote from an earlier exchange day carries its absolute
+`YYYY-MM-DD` date; both its date and time use the exchange time zone (including
+DST), independently of the reader's local date. The interface
 is in English or Chinese, following your system language; names follow it
 too where the catalog has them.
 
@@ -66,8 +68,12 @@ single point today is shown as a dot. Historical lines show an absolute
 `YYYY-MM-DD` exchange date in the list and detail view; the chart date comes
 from its points, independently of quote time. Empty history shows no chart.
 
-Historical session bounds come from Yahoo when available; otherwise the axis
-spans that day's actual returned points. Exchange time zones account for DST,
+Historical session bounds prefer Yahoo's `meta.tradingPeriods` (an array or
+its `regular` array), with root-level `tradingPeriods` as a compatibility fallback.
+Even sparse history uses those full session bounds, including early closes;
+without bounds the axis spans that day's actual returned points. Session selection
+is cached per quote object and exchange calendar day, reused by charts and titles;
+refreshing a quote or crossing exchange midnight invalidates it. Exchange time zones account for DST,
 and Hong Kong lunch remains collapsed. Quotes keep Yahoo's price and explicit
 previous close; if Yahoo omits previous close, the last available close before
 the quote's exchange day is used, which can differ from an official closing

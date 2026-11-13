@@ -31,7 +31,7 @@ const modulePath = join(scratch, "worker.mjs");
 writeFileSync(
   modulePath,
   script +
-    `\nexport { normalizeSymbol, parseWatchlist, marketOf, formatPrice, fold, yahooSymbol, searchCatalog, decodeYahoo, chartData, sparkline, detailView, fetchStocks, openAdd, setQuery };` +
+    `\nexport { normalizeSymbol, parseWatchlist, marketOf, formatPrice, fold, yahooSymbol, searchCatalog, decodeYahoo, decodeBinance, decodeKlines, chartSession, chartData, staleDate, sparkline, detailView, fetchStocks, openAdd, setQuery };` +
     `\nexport function useCatalog(document) { catalog = buildIndex(document); }\n` +
     `\nexport function useQuote(q) { quotes = {[q.symbol]: q}; watchlist = [{symbol: q.symbol, invalid: false}]; selected = null; mode = "list"; }\n`,
 );
@@ -86,6 +86,7 @@ test("markets come from the suffix, the index list or the pair", () => {
   assert.equal(worker.marketOf("^HSI"), "hk");
   assert.equal(worker.marketOf("ETH/USDT"), "crypto");
   assert.equal(worker.marketOf("GC=F"), "metal");
+  assert.equal(worker.marketOf("BTC-USD"), "us");
   assert.equal(worker.marketOf("AAPL", "America/New_York"), "us");
 });
 
@@ -167,6 +168,114 @@ function renderedChart(q, detail = true) {
   return nodes(worker.sparkline(q, "#00FF00", 150, detail)).find(n => n.type === "Chart")?.props;
 }
 
+// Yahoo's actual chart response nests regular history under meta.tradingPeriods.
+function yahooHistory(points, ranges, {symbol = "AAPL", zone = "America/New_York", offset = -18000,
+  current = session("2026-11-13"), timestamp = "2026-11-12T21:00:00Z", shape = "regular", root} = {}) {
+  const history = ranges.map(([start, end]) => [{start: start / 1000, end: end / 1000}]);
+  const meta = {symbol, regularMarketPrice: 110, regularMarketTime: ms(timestamp) / 1000,
+    exchangeTimezoneName: zone, gmtoffset: offset,
+    currentTradingPeriod: {regular: {start: current[0] / 1000, end: current[1] / 1000}}};
+  if (shape !== "root") meta.tradingPeriods = shape === "array" ? history : {pre: [], regular: history, post: []};
+  const result = {meta, timestamp: points.map(p => p[0] / 1000), indicators: {quote: [{close: points.map(p => p[1])}]}};
+  if (root) result.tradingPeriods = {regular: root.map(([start, end]) => [{start: start / 1000, end: end / 1000}])};
+  return worker.decodeYahoo(symbol, {ok: true, status: 200, text: JSON.stringify({chart: {result: [result]}})});
+}
+
+test("real Yahoo metadata keeps sparse history on its full session axis and takes priority over root", () => at("2026-11-13T14:00:00Z", () => {
+  for (const shape of ["regular", "array", "root"]) {
+    const ranges = [session("2026-11-12"), session("2026-11-13")];
+    const q = yahooHistory(bars("2026-11-12", 2), ranges, {shape,
+      root: shape === "root" ? ranges : [session("2026-11-12", "14:30", "14:35")]});
+    assert.equal(q.tradingPeriods.length, 2);
+    const chart = renderedChart(q);
+    assert.deepEqual(chart.xDomain, [0, 78]);
+    assert.deepEqual(chart.series[0].points.map(p => p.x), [0, 1]);
+    assert.equal(chart.labels[0], "09:30");
+    assert.equal(chart.labels.at(-1), "16:00");
+  }
+}));
+
+test("decoded historical metadata honors early closes and sessions across DST", () => {
+  const cases = [
+    {now: "2026-11-30T13:00:00Z", date: "2026-11-27", open: "14:30", close: "18:00", slots: 42, end: "13:00"},
+    {now: "2026-11-02T13:00:00Z", date: "2026-10-30", open: "13:30", close: "20:00", slots: 78, end: "16:00"},
+  ];
+  for (const c of cases) at(c.now, () => {
+    const q = yahooHistory(bars(c.date, 2, 100, c.open), [session(c.date, c.open, c.close)], {
+      current: session(c.now.slice(0, 10)), timestamp: `${c.date}T${c.close}:00Z`,
+    });
+    const chart = renderedChart(q);
+    assert.equal(q.tradingPeriods.length, 1);
+    assert.deepEqual(chart.xDomain, [0, c.slots]);
+    assert.equal(chart.labels[0], "09:30");
+    assert.equal(chart.labels.at(-1), c.end);
+    assert.match(chart.series[0].points[0].label, new RegExp(`^${c.date} 09:30`));
+  });
+});
+
+test("decoded HK history retains full bounds and collapses lunch", () => at("2026-11-13T01:00:00Z", () => {
+  const q = yahooHistory([[ms("2026-11-12T03:55:00Z"), 100], [ms("2026-11-12T05:00:00Z"), 101]],
+    [session("2026-11-12", "01:30", "08:00")], {symbol: "0700.HK", zone: "Asia/Hong_Kong", offset: 28800,
+      current: session("2026-11-13", "01:30", "08:00"), timestamp: "2026-11-12T08:00:00Z"});
+  assert.equal(q.tradingPeriods.length, 1);
+  const chart = renderedChart(q);
+  assert.deepEqual(chart.xDomain, [0, 66]);
+  assert.equal(chart.labels[0], "09:30");
+  assert.equal(chart.labels.at(-1), "16:00");
+  assert.equal(chart.series[0].points[1].x - chart.series[0].points[0].x, 1);
+}));
+
+test("quote date and time use the exchange zone even when Beijing sees the same local date", () => {
+  const originalTZ = process.env.TZ;
+  try {
+    process.env.TZ = "Asia/Shanghai";
+    at("2026-11-13T14:00:00Z", () => {
+      const q = quote(bars("2026-11-11", 2), {timestamp: ms("2026-11-12T21:00:00Z")});
+      assert.equal(worker.staleDate(q), "2026-11-12");
+      const tree = JSON.stringify(worker.detailView(q, () => {}));
+      assert.match(tree, /2026-11-12 16:00/);
+      assert.match(tree, /Intraday · 2026-11-11/);
+    });
+    at("2026-11-02T13:00:00Z", () => {
+      const q = quote(bars("2026-10-30", 2, 100, "13:30"), {timestamp: ms("2026-10-30T20:00:00Z")});
+      assert.match(JSON.stringify(worker.detailView(q, () => {})), /2026-10-30 16:00/);
+    });
+    at("2026-11-14T00:30:00Z", () => {
+      assert.equal(worker.staleDate(quote([], {timestamp: ms("2026-11-13T21:00:00Z")})), "");
+    });
+  } finally {
+    if (originalTZ === undefined) delete process.env.TZ;
+    else process.env.TZ = originalTZ;
+  }
+});
+
+test("session caching reuses list/detail selection but expires for replacement quotes and exchange midnight", () => {
+  let reads = 0;
+  const points = bars("2026-11-13", 2);
+  points.filter = function (...args) { reads++; return Array.prototype.filter.apply(this, args); };
+  const q = quote(points);
+  let first;
+  at("2026-11-13T15:00:00Z", () => {
+    first = worker.chartSession(q);
+    worker.sparkline(q, "green", 30, false);
+    worker.detailView(q, () => {});
+    assert.strictEqual(worker.chartSession(q), first);
+    assert.equal(reads, 1, "month history is scanned once across chart and title rendering");
+    const replacement = quote(bars("2026-11-13", 3));
+    assert.notStrictEqual(worker.chartSession(replacement), first);
+    assert.equal(worker.chartData(replacement).points.length, 3);
+  });
+  at("2026-11-14T00:30:00Z", () => {
+    assert.strictEqual(worker.chartSession(q), first, "host midnight is not exchange midnight");
+  });
+  at("2026-11-14T05:00:00Z", () => {
+    const next = worker.chartSession(q);
+    assert.notStrictEqual(next, first);
+    assert.equal(reads, 2);
+    assert.equal(next.baseline, null);
+  });
+});
+
 test("pre-market renders all 79 previous-session points with their own date and axis", () => at("2026-11-13T13:58:00Z", () => {
   const q = quote(bars("2026-11-12"));
   const chart = renderedChart(q);
@@ -245,6 +354,20 @@ test("no valid points renders the empty state, and crypto retains all 96 rolling
   const chart = renderedChart(q);
   assert.equal(chart.series[0].points.length, 96);
   assert.equal(chart.referenceLines[0].value, 99);
+  assert.match(JSON.stringify(worker.detailView(q, () => {})), /Last 24 hours/);
+}));
+
+test("Binance BASE/QUOTE decoding keeps all rolling 24-hour bars across dates", () => at("2026-11-13T15:00:00Z", () => {
+  const response = value => ({ok: true, status: 200, text: JSON.stringify(value)});
+  const q = worker.decodeBinance(["ETH/BTC"], response([{symbol: "ETHBTC", lastPrice: "0.03", prevClosePrice: "0.029",
+    closeTime: ms("2026-11-13T15:00:00Z")}]))["ETH/BTC"];
+  q.points = worker.decodeKlines(response(Array.from({length: 96}, (_, i) =>
+    [ms("2026-11-12T15:00:00Z") + i * 900000, "0", "0", "0", String(0.03 + i / 100000)])));
+  const chart = renderedChart(q);
+  assert.equal(q.market, "crypto");
+  assert.equal(chart.series[0].points.length, 96);
+  assert.deepEqual(chart.xDomain, [0, 95]);
+  assert.equal(chart.referenceLines[0].value, 0.029);
   assert.match(JSON.stringify(worker.detailView(q, () => {})), /Last 24 hours/);
 }));
 
