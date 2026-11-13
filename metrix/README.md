@@ -12,8 +12,6 @@ low and previous close, and whether its market is open. Stocks and indices
 come from Yahoo Finance, crypto pairs (`BTC/USDT`) from Binance's public Spot
 data.
 
-<img src="preview.png" alt="Pulse for Metrix.Bar: a watchlist with today's line for each ticker" width="340">
-
 ## Install
 
 Install [Metrix.Bar](https://metrix.bar/download) and open it once. Then run
@@ -82,7 +80,7 @@ close and is not used. Historical charts omit the previous-close reference:
 Yahoo may advance that field before its quote timestamp changes. Binance's
 rolling 24-hour charts are unchanged.
 
-The registry link becomes available after this fork's changes reach `main`.
+The registry link installs this fork from its `main` branch.
 A different registry can receive a different composite installation ID in
 Metrix.Bar; check the installation sheet when switching sources.
 
