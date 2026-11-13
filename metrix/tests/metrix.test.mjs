@@ -31,8 +31,9 @@ const modulePath = join(scratch, "worker.mjs");
 writeFileSync(
   modulePath,
   script +
-    `\nexport { normalizeSymbol, parseWatchlist, marketOf, formatPrice, fold, yahooSymbol, searchCatalog };` +
-    `\nexport function useCatalog(document) { catalog = buildIndex(document); }\n`,
+    `\nexport { normalizeSymbol, parseWatchlist, marketOf, formatPrice, fold, yahooSymbol, searchCatalog, decodeYahoo, chartData, sparkline, detailView, fetchStocks, openAdd, setQuery };` +
+    `\nexport function useCatalog(document) { catalog = buildIndex(document); }\n` +
+    `\nexport function useQuote(q) { quotes = {[q.symbol]: q}; watchlist = [{symbol: q.symbol, invalid: false}]; selected = null; mode = "list"; }\n`,
 );
 const worker = await import(pathToFileURL(modulePath).href);
 rmSync(scratch, { recursive: true, force: true });
@@ -56,8 +57,8 @@ test("the dashboard contacts only the hosts the README names", () => {
     "https://www.pulseticker.app",
   ]);
   for (const origin of origins) assert.ok(readme.includes(new URL(origin).host), `README names ${origin}`);
-  // Links to Pulse for Mac are tagged for this edition.
-  for (const m of source.matchAll(/https:\/\/www\.pulseticker\.app\/\?[^"`\s]*/g)) assert.match(m[0], /utm_source=metrixbar/);
+  assert.doesNotMatch(source, /utm_|upsell|ctaMenu|openURL|Try free for 30 days|获取完整版|解锁完整版/);
+  assert.doesNotMatch(index.dashboards[0].docs, /Pulse for Mac|30 days/);
 });
 
 test("tickers are written the way Yahoo and Binance spell them", () => {
@@ -141,4 +142,158 @@ test("search ranks exact over prefix over substring, then popularity", () => {
   assert.equal(apple.name, "Apple");
   const [bitcoin] = worker.searchCatalog("bitcoin");
   assert.equal(bitcoin.name, "Bitcoin");
+});
+
+const ms = s => Date.parse(s);
+const session = (date, open = "14:30", close = "21:00") => [ms(`${date}T${open}:00Z`), ms(`${date}T${close}:00Z`)];
+const bars = (date, count = 79, value = 100, open = "14:30") => Array.from({length: count}, (_, i) =>
+  [ms(`${date}T${open}:00Z`) + i * 300000, value + i / 10]);
+function quote(points, overrides = {}) {
+  return {symbol: "AAPL", market: "us", source: "Yahoo Finance", price: 110, previousClose: 99,
+    timestamp: ms("2026-11-13T14:30:00Z"), gmtoffset: -18000, timeZone: "America/New_York",
+    periods: {regular: session("2026-11-13")}, tradingPeriods: [session("2026-11-12"), session("2026-11-13")],
+    points, ...overrides};
+}
+function at(time, fn) {
+  const now = Date.now;
+  Date.now = () => ms(time);
+  try { return fn(); } finally { Date.now = now; }
+}
+function nodes(tree) {
+  if (!tree || typeof tree !== "object") return [];
+  return [tree, ...(tree.children || []).flatMap(nodes)];
+}
+function renderedChart(q, detail = true) {
+  return nodes(worker.sparkline(q, "#00FF00", 150, detail)).find(n => n.type === "Chart")?.props;
+}
+
+test("pre-market renders all 79 previous-session points with their own date and axis", () => at("2026-11-13T13:58:00Z", () => {
+  const q = quote(bars("2026-11-12"));
+  const chart = renderedChart(q);
+  assert.equal(chart.series[0].points.length, 79);
+  assert.equal(chart.labels[0], "09:30");
+  assert.equal(chart.labels.at(-1), "16:00");
+  assert.match(chart.series[0].points[0].label, /^2026-11-12 /);
+  assert.deepEqual(chart.referenceLines, []);
+  assert.ok(chart.yDomain[0] > 99, "today's previous close must not stretch yesterday's domain");
+  assert.match(JSON.stringify(worker.detailView(q, () => {})), /Intraday · 2026-11-12/);
+  assert.match(JSON.stringify(worker.sparkline(q, "#00FF00", 30, false)), /2026-11-12/);
+}));
+
+test("today wins without stitching yesterday; one point renders a visible dot", () => at("2026-11-13T15:00:00Z", () => {
+  for (const count of [1, 2, 7]) {
+    const q = quote([...bars("2026-11-12"), ...bars("2026-11-13", count, 111)]);
+    const chart = renderedChart(q);
+    assert.equal(chart.series[0].points.length, count);
+    assert.ok(chart.series[0].points.every(p => p.y >= 111));
+    assert.equal(chart.dots, count === 1);
+    assert.match(chart.series[0].points[0].label, /^2026-11-13 /);
+    assert.equal(chart.referenceLines[0].value, 99);
+  }
+}));
+
+test("null and zero current-day closes fall back through the actual Yahoo decoder", () => at("2026-11-13T15:00:00Z", () => {
+  const points = [...bars("2026-11-12"), [ms("2026-11-13T14:30:00Z"), null], [ms("2026-11-13T14:35:00Z"), 0]];
+  const body = {chart: {result: [{meta: {symbol: "AAPL", regularMarketPrice: 110, regularMarketTime: ms("2026-11-13T14:35:00Z") / 1000,
+    previousClose: 99, chartPreviousClose: 50, exchangeTimezoneName: "America/New_York", gmtoffset: -18000,
+    currentTradingPeriod: {regular: {start: session("2026-11-13")[0] / 1000, end: session("2026-11-13")[1] / 1000}}},
+    timestamp: points.map(p => p[0] / 1000), indicators: {quote: [{close: points.map(p => p[1])}]}}]}};
+  const q = worker.decodeYahoo("AAPL", {ok: true, status: 200, text: JSON.stringify(body)});
+  assert.equal(q.previousClose, 99);
+  assert.equal(renderedChart(q).series[0].points.length, 79);
+  assert.equal(worker.chartData(q).date, "2026-11-12");
+}));
+
+test("weekends and long holidays select the latest populated day, not 24 hours ago", () => {
+  for (const now of ["2026-11-15T12:00:00Z", "2026-11-23T13:00:00Z"]) at(now, () => {
+    const q = quote([...bars("2026-11-11"), ...bars("2026-11-13")]);
+    assert.equal(worker.chartData(q).date, "2026-11-13");
+    assert.equal(renderedChart(q).series[0].points.length, 79);
+  });
+});
+
+test("exchange dates cross reader midnight correctly and historical axes honor DST", () => {
+  at("2026-11-14T00:30:00Z", () => {
+    const q = quote([...bars("2026-11-12"), ...bars("2026-11-13")]);
+    assert.equal(worker.chartData(q).date, "2026-11-13");
+  });
+  at("2026-11-02T13:00:00Z", () => {
+    const q = quote(bars("2026-10-30", 79, 100, "13:30"), {
+      periods: {regular: session("2026-11-02")}, tradingPeriods: [session("2026-10-30", "13:30", "20:00")],
+    });
+    const chart = renderedChart(q);
+    assert.equal(chart.labels[0], "09:30");
+    assert.equal(chart.labels.at(-1), "16:00");
+  });
+});
+
+test("HK lunch collapses while both morning and afternoon bars survive", () => at("2026-11-13T09:00:00Z", () => {
+  const q = quote([[ms("2026-11-13T03:55:00Z"), 100], [ms("2026-11-13T05:00:00Z"), 101]], {
+    symbol: "0700.HK", market: "hk", timeZone: "Asia/Hong_Kong", gmtoffset: 28800,
+    periods: {regular: session("2026-11-13", "01:30", "08:00")}, tradingPeriods: [],
+  });
+  const chart = renderedChart(q);
+  assert.equal(chart.series[0].points.length, 2);
+  assert.equal(chart.series[0].points[1].x - chart.series[0].points[0].x, 1);
+}));
+
+test("no valid points renders the empty state, and crypto retains all 96 rolling points", () => at("2026-11-13T15:00:00Z", () => {
+  const empty = quote([[ms("2026-11-12T14:30:00Z"), 0], [ms("2026-11-13T14:30:00Z"), null]]);
+  assert.equal(renderedChart(empty), undefined);
+  assert.match(JSON.stringify(worker.sparkline(empty, "red", 150, true)), /No intraday data yet/);
+  const q = quote(bars("2026-11-12", 96), {symbol: "BTC/USDT", market: "crypto", periods: null, gmtoffset: null});
+  const chart = renderedChart(q);
+  assert.equal(chart.series[0].points.length, 96);
+  assert.equal(chart.referenceLines[0].value, 99);
+  assert.match(JSON.stringify(worker.detailView(q, () => {})), /Last 24 hours/);
+}));
+
+test("session boundaries exclude pre-market and future bars, retaining the exact close", () => at("2026-11-13T21:05:00Z", () => {
+  const q = quote([...bars("2026-11-12"), [ms("2026-11-13T14:25:00Z"), 88],
+    [ms("2026-11-13T21:00:00Z"), 111], [ms("2026-11-14T14:30:00Z"), 222]]);
+  const chart = renderedChart(q);
+  assert.equal(chart.series[0].points.length, 1);
+  assert.equal(chart.series[0].points[0].y, 111);
+  assert.equal(chart.series[0].points[0].x, 78);
+  assert.equal(chart.dots, true);
+}));
+
+test("a stale quote timestamp cannot make today's previous close a historical baseline", () => at("2026-11-13T13:58:00Z", () => {
+  const q = quote(bars("2026-11-12"), {timestamp: ms("2026-11-12T21:00:00Z"), previousClose: 999});
+  const chart = renderedChart(q);
+  assert.deepEqual(chart.referenceLines, []);
+  assert.ok(chart.yDomain[1] < 110);
+}));
+
+test("fetch uses one multi-session request and rendered list/detail/search contain no promotion", async () => {
+  const originalFetch = globalThis.fetch;
+  const urls = [];
+  globalThis.fetch = async url => {
+    urls.push(url);
+    return {ok: false, status: 404, text: async () => "{}", headers: {get: () => null}};
+  };
+  try {
+    await worker.fetchStocks(["AAPL"]);
+    assert.equal(urls.length, 1);
+    const url = new URL(urls[0]);
+    assert.equal(url.searchParams.get("range"), "1mo");
+    assert.equal(url.searchParams.get("interval"), "5m");
+    assert.equal(url.searchParams.get("includePrePost"), "false");
+    worker.useQuote(quote(bars("2026-11-12")));
+    const list = worker.default.render({inputs: {}});
+    assert.equal(nodes(list.panel).find(n => n.type === "Chart").props.series[0].points.length, 79);
+    nodes(list.panel).find(n => n.props?.key === "AAPL").props.onClick();
+    const detail = worker.default.render({inputs: {}});
+    assert.equal(nodes(detail.panel).find(n => n.type === "Chart").props.series[0].points.length, 79);
+    const trees = [list, detail];
+    worker.openAdd();
+    worker.setQuery("aapl");
+    const search = worker.default.render({inputs: {}});
+    trees.push(search);
+    assert.ok(nodes(search.panel).some(n => n.type === "TextInput"));
+    assert.match(JSON.stringify(search), /Apple/);
+    for (const tree of trees) {
+      assert.doesNotMatch(JSON.stringify(tree, (_, v) => typeof v === "function" ? v.toString() : v), /Pulse for Mac|utm_|openURL|pulseticker\.app|免费试用|完整版|30 days/);
+    }
+  } finally { globalThis.fetch = originalFetch; }
 });

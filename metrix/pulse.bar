@@ -1,6 +1,6 @@
-<bar protocol-version="0" version="1.0.0" id="pulse" title="Pulse for Metrix.Bar"
-     category="finance" description="A lightweight edition of Pulse for Mac: a stock and crypto watchlist with intraday charts, from Yahoo Finance and Binance."
-     license="MIT" homepage="https://www.pulseticker.app/" refresh="1m" material="glass"
+<bar protocol-version="0" version="1.0.1" id="pulse" title="Pulse for Metrix.Bar"
+     category="finance" description="A stock and crypto watchlist with intraday charts, from Yahoo Finance and Binance."
+     license="MIT" homepage="https://github.com/ch1y1z1/Pulse/tree/main/metrix" refresh="1m" material="glass"
      icon="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjEzNCAyMTUgNzU2IDU4MCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJjdXJyZW50Q29sb3IiIHN0cm9rZS13aWR0aD0iNzIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBhdGggZD0iTTE3MCA1MTJIMjkyQzMxNiA1MTIgMzI4IDQ3NiAzNDggNDc2QzM3MSA0NzYgMzgzIDUzNyA0MDUgNTM3QzQyNSA1MzcgNDQ0IDQyMyA0OTMgMjc4QzUwMiAyNTEgNTIwIDI1MSA1MjkgMjgwTDYyNyA3MjhDNjM0IDc1OSA2NTQgNzU5IDY2NiA3MzBMNzM4IDUyMEM3NDQgNTAzIDc1NiA0OTggNzc0IDQ5OEg4NTQiLz48L3N2Zz4=">
   <permissions>
     <network origin="https://query1.finance.yahoo.com" />
@@ -19,12 +19,12 @@
       <option value="red-up" label="Red up, green down" />
     </input>
   </inputs>
-  <docs><![CDATA[Pulse for Metrix.Bar shows a watchlist of stocks, indices and crypto pairs with today's line for each, and a detail view with the day's chart, open, high, low and previous close.
+  <docs><![CDATA[Pulse for Metrix.Bar shows a watchlist of stocks, indices and crypto pairs with a single trading day’s line for each, and a detail view with the day's chart, open, high, low and previous close.
 
 Press + in the panel to search by ticker or company name in English, Chinese, Japanese or Korean (AAPL, Tencent, 腾讯, 600519, BTC) and add to the watchlist. Search runs on your computer over Pulse's symbol catalog, downloaded from pulseticker.app at most once a day; what you type is not sent anywhere. Right-click a row to move it to the top, reorder it or remove it; the first one is shown in the menu bar. The watchlist is kept on your computer. The "Starting watchlist" setting takes Yahoo Finance tickers (AAPL, 0700.HK, 600519.SS, 7203.T, ^GSPC, GC=F) or Binance Spot pairs written BASE/QUOTE (BTC/USDT); editing it replaces the panel's list.
 
-Quotes refresh every minute and may be delayed by the exchange. Stocks come from Yahoo Finance, crypto from Binance's public Spot data. Pulse for Metrix.Bar is a free, lightweight edition. The full experience is Pulse for Mac: positions with today's and total P&L, US pre-market and after-hours charts, 5-minute to monthly candlesticks with volume, a rotating menu bar ticker, named watchlists, and a local MCP server for AI agents. Every feature is free to try for 30 days: https://www.pulseticker.app/]]></docs>
-  <script apis="shell match-media localStorage"><![CDATA[
+Quotes refresh every minute and may be delayed by the exchange. Stocks come from Yahoo Finance, crypto from Binance's public Spot data. When today has no valid chart points, the latest available previous trading day is shown with its absolute exchange date. Charts never combine trading days. Crypto charts cover 24 hours.]]></docs>
+  <script apis="intl match-media localStorage"><![CDATA[
 // Pulse for Metrix.Bar. MIT License, Copyright (c) SuperAgents, LLC.
 // Quote decoding and symbol rules follow Pulse for Herdr (fatwang2/Pulse, herdr/pulse/mods/pulse/quotes.js);
 // sizes, colors and layout follow Pulse for Mac's watchlist.
@@ -50,10 +50,6 @@ const STRINGS = {
     addAsIs: s => `Add ${s}`, added: "Added", full: "The watchlist holds up to 30 tickers",
     moveTop: "Move to Top", moveUp: "Move Up", moveDown: "Move Down", remove: "Remove",
     healthy: "Quotes healthy", failed: "Couldn't update quotes", updated: t => `Updated ${t}`,
-    cta: "Get the full Pulse for Mac", ctaMenu: "Get the Full Pulse for Mac…",
-    ctaTip: "Positions and P&L, extended-hours charts, candlesticks, a rotating menu bar ticker and more. Free for 30 days.",
-    upsellTitle: "More in Pulse for Mac", upsellBody: "Candlesticks from 5 minutes to monthly, US pre-market and after hours, and your P&L.",
-    upsellAction: "Try free for 30 days",
     price: "Price", intraday: "Intraday", last24h: "Last 24 hours", noChart: "No intraday data yet",
     marketData: "Market Data", open: "Open", high: "High", low: "Low", prevClose: "Prev Close", range: "Range %", volume: "Volume",
     sessions: {open: "Market open", pre: "Pre-market", post: "After hours", closed: "Market closed", "24h": "Trades 24h"},
@@ -75,10 +71,6 @@ const STRINGS = {
     addAsIs: s => `添加 ${s}`, added: "已添加", full: "自选最多 30 个",
     moveTop: "置顶", moveUp: "上移", moveDown: "下移", remove: "移除",
     healthy: "行情正常", failed: "行情更新失败", updated: t => `更新于 ${t}`,
-    cta: "解锁完整版 Pulse for Mac", ctaMenu: "获取完整版 Pulse for Mac…",
-    ctaTip: "持仓与盈亏、美股盘前盘后分时、K 线图、菜单栏轮播行情等完整功能，免费试用 30 天",
-    upsellTitle: "在 Pulse for Mac 中查看更多", upsellBody: "5 分钟到月 K 的蜡烛图、美股盘前盘后分时，以及你的持仓盈亏。",
-    upsellAction: "免费试用 30 天",
     price: "价格", intraday: "分时", last24h: "近 24 小时", noChart: "暂无分时数据",
     marketData: "行情数据", open: "开盘", high: "最高", low: "最低", prevClose: "昨收", range: "振幅", volume: "成交量",
     sessions: {open: "交易中", pre: "盘前", post: "盘后", closed: "已收盘", "24h": "24 小时交易"},
@@ -115,7 +107,6 @@ const accentWash = (strong = false) => dark ? (strong ? "#0A84FF40" : "#0A84FF29
 const badgeColor = market => (BADGE[market] || BADGE.us)[dark ? 1 : 0];
 
 const WIDTH = 340;
-const PULSE_URL = "https://www.pulseticker.app/?utm_source=metrixbar&utm_medium=dashboard&utm_content=";
 
 // The Pulse waveform (PulseUI PulseWaveformMark geometry) and Lucide icons (ISC).
 const LOGO = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="134 215 756 580" fill="none" stroke="currentColor" stroke-width="72" stroke-linecap="round" stroke-linejoin="round"><path d="M170 512H292C316 512 328 476 348 476C371 476 383 537 405 537C425 537 444 423 493 278C502 251 520 251 529 280L627 728C634 759 654 759 666 730L738 520C744 503 756 498 774 498H854"/></svg>`;
@@ -124,7 +115,6 @@ const lucide = body => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 
 const ICON = {
   refresh: lucide(`<path d="M3 12a9 9 0 0 1 9-9a9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5m5 4a9 9 0 0 1-9 9a9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>`),
   back: lucide(`<path d="m15 18-6-6 6-6"/>`),
-  external: lucide(`<path d="M7 7h10v10M7 17L17 7"/>`),
   alert: lucide(`<circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/>`),
   plus: lucide(`<path d="M5 12h14M12 5v14"/>`),
   check: lucide(`<path d="M20 6 9 17l-5-5"/>`),
@@ -233,7 +223,6 @@ function decodeYahoo(symbol, response) {
   // Never show another instrument's response under the requested ticker.
   if (returned !== symbol) throw new QuoteError("noQuote");
   if (!positive(meta.regularMarketPrice) || !positive(meta.regularMarketTime)) throw new QuoteError("noQuote");
-  const close = positive(meta.previousClose) ? meta.previousClose : meta.chartPreviousClose;
   const regular = meta.currentTradingPeriod?.regular;
   const gmtoffset = Number.isFinite(regular?.gmtoffset) ? regular.gmtoffset : (Number.isFinite(meta.gmtoffset) ? meta.gmtoffset : 0);
   const market = marketOf(symbol, meta.exchangeTimezoneName);
@@ -241,7 +230,12 @@ function decodeYahoo(symbol, response) {
   const stamps = Array.isArray(result.timestamp) ? result.timestamp : [];
   const points = [];
   stamps.forEach((t, i) => { if (Number.isFinite(t) && positive(bars.close?.[i])) points.push([t * 1000, bars.close[i]]); });
-  const opens = (bars.open || []).filter(positive);
+  const quoteDate = exchangeDate(meta.regularMarketTime * 1000, {timeZone: meta.exchangeTimezoneName, gmtoffset});
+  const opens = (bars.open || []).filter((v, i) => positive(v) && Number.isFinite(stamps[i]) && exchangeDate(stamps[i] * 1000, {timeZone: meta.exchangeTimezoneName, gmtoffset}) === quoteDate);
+  // Multi-day chartPreviousClose is the close before the requested range, not yesterday.
+  const prior = points.filter(([t]) => exchangeDate(t, {timeZone: meta.exchangeTimezoneName, gmtoffset}) < quoteDate).at(-1);
+  const quoteClose = positive(meta.previousClose) ? meta.previousClose
+    : positive(meta.regularMarketPreviousClose) ? meta.regularMarketPreviousClose : prior?.[1];
   const period = p => Number.isFinite(p?.start) && Number.isFinite(p?.end) && p.end > p.start ? [p.start * 1000, p.end * 1000] : null;
   const delay = meta.exchangeDataDelayedBy;
   return {
@@ -249,7 +243,7 @@ function decodeYahoo(symbol, response) {
     name: market === "us" && meta.instrumentType === "INDEX" ? (cleanText(meta.shortName) || symbol) : displayName(meta, symbol),
     isIndex: meta.instrumentType === "INDEX" || symbol.startsWith("^"),
     price: meta.regularMarketPrice,
-    previousClose: positive(close) ? close : null,
+    previousClose: positive(quoteClose) ? quoteClose : null,
     currency: typeof meta.currency === "string" && /^[A-Z]{3}$/.test(meta.currency) ? meta.currency : null,
     timestamp: meta.regularMarketTime * 1000,
     delaySeconds: Number.isFinite(delay) && delay >= 0 ? delay : null,
@@ -257,7 +251,9 @@ function decodeYahoo(symbol, response) {
     high: positive(meta.regularMarketDayHigh) ? meta.regularMarketDayHigh : null,
     low: positive(meta.regularMarketDayLow) ? meta.regularMarketDayLow : null,
     volume: positive(meta.regularMarketVolume) ? meta.regularMarketVolume : null,
-    gmtoffset,
+    gmtoffset, timeZone: meta.exchangeTimezoneName,
+    tradingPeriods: (Array.isArray(result.tradingPeriods) ? result.tradingPeriods : result.tradingPeriods?.regular || [])
+      .flat().map(period).filter(Boolean),
     periods: {pre: period(meta.currentTradingPeriod?.pre), regular: period(regular), post: period(meta.currentTradingPeriod?.post)},
     points,
   };
@@ -367,7 +363,7 @@ async function fetchStocks(symbols) {
     lastStart = Math.max(Date.now(), lastStart + 250);
     if (wait > 0) await sleep(wait);
     try {
-      const url = `${YAHOO_CHART}${encodeURIComponent(symbol)}?interval=5m&range=1d&includePrePost=false`;
+      const url = `${YAHOO_CHART}${encodeURIComponent(symbol)}?interval=5m&range=1mo&includePrePost=false`;
       quotes[symbol] = decodeYahoo(symbol, await get(url));
       delete errors[symbol];
       fetched++;
@@ -822,23 +818,76 @@ function sessionAxis(q) {
   return {slots, x: t => clamp(minuteOf(t) / 5, 0, slots), labelAt};
 }
 
+/** Exchange calendar dates, independent of the reader's time zone; IANA handles DST. */
+const dateFormatters = new Map();
+function exchangeDate(ms, q) {
+  try {
+    if (q.timeZone) {
+      if (!dateFormatters.has(q.timeZone)) dateFormatters.set(q.timeZone,
+        new Intl.DateTimeFormat("en-US", {timeZone: q.timeZone, year: "numeric", month: "2-digit", day: "2-digit"}));
+      const parts = dateFormatters.get(q.timeZone).formatToParts(new Date(ms));
+      const value = name => parts.find(p => p.type === name).value;
+      return `${value("year")}-${value("month")}-${value("day")}`;
+    }
+  } catch { /* Yahoo's numeric offset remains usable without a valid zone. */ }
+  return new Date(ms + (q.gmtoffset || 0) * 1000).toISOString().slice(0, 10);
+}
+
+function offsetAt(ms, q) {
+  try {
+    if (q.timeZone) {
+      const parts = new Intl.DateTimeFormat("en-US", {timeZone: q.timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23"}).formatToParts(new Date(ms));
+      const value = name => Number(parts.find(p => p.type === name).value);
+      const utc = new Date(ms);
+      let minutes = value("hour") * 60 + value("minute") - utc.getUTCHours() * 60 - utc.getUTCMinutes();
+      if (minutes > 840) minutes -= 1440;
+      if (minutes < -720) minutes += 1440;
+      return minutes * 60;
+    }
+  } catch { /* numeric offset fallback */ }
+  return q.gmtoffset;
+}
+
+/** Select exactly one session. One valid point today must win over any history. */
+function chartSession(q) {
+  const raw = (q.points || []).filter(([t, y]) => Number.isFinite(t) && positive(y)).sort((a, b) => a[0] - b[0]);
+  if (q.market === "crypto") return {series: raw, regular: null, date: "", baseline: q.previousClose, offset: null};
+  const today = exchangeDate(Date.now(), q);
+  const periods = [...(q.tradingPeriods || []), q.periods?.regular].filter(Boolean);
+  const periodFor = t => periods.find(([start, end]) => t >= start && t <= end);
+  const datesByTime = new Map();
+  const dateFor = t => {
+    if (!datesByTime.has(t)) datesByTime.set(t, exchangeDate(periodFor(t)?.[0] ?? t, q));
+    return datesByTime.get(t);
+  };
+  const sessionDates = new Set(periods.map(p => exchangeDate(p[0], q)));
+  // A provided session excludes out-of-session points; without history metadata,
+  // includePrePost=false still guarantees regular-session bars from Yahoo.
+  const valid = raw.filter(([t]) => t <= Date.now() && dateFor(t) <= today &&
+    (!sessionDates.has(dateFor(t)) || periodFor(t)));
+  const dates = valid.map(([t]) => dateFor(t));
+  const date = dates.includes(today) ? today : dates.at(-1);
+  const series = valid.filter(([t]) => dateFor(t) === date);
+  const regular = series.length ? periodFor(series[0][0]) || [series[0][0], Math.max(series[0][0] + 300000, series.at(-1)[0])] : null;
+  // Yahoo can advance previousClose before regularMarketTime changes. Historical
+  // charts therefore omit the reference rather than guess its trading date.
+  const baseline = date === today && date === exchangeDate(q.timestamp, q) ? q.previousClose : null;
+  return {series, regular, date, baseline, offset: series.length ? offsetAt(series[0][0], q) : q.gmtoffset};
+}
+
 /** Points, domains and labels for the list sparkline and the detail chart. */
 function chartData(q) {
-  const raw = q.points || [];
-  if (raw.length < 2) return null;
-  const axis = sessionAxis(q);
-  // Only bars from the quote's own session belong on the line.
-  const series = axis ? raw.filter(([t]) => t >= q.periods.regular[0] - 60000 && t <= q.periods.regular[1]) : raw;
-  if (series.length < 2) return null;
+  const chosen = chartSession(q), {series, baseline} = chosen;
+  if (!series.length) return null;
+  const axis = sessionAxis({...q, gmtoffset: chosen.offset, periods: {regular: chosen.regular}});
   let lo = Math.min(...series.map(p => p[1])), hi = Math.max(...series.map(p => p[1]));
-  if (positive(q.previousClose)) { lo = Math.min(lo, q.previousClose); hi = Math.max(hi, q.previousClose); }
+  if (positive(baseline)) { lo = Math.min(lo, baseline); hi = Math.max(hi, baseline); }
   const pad = Math.max((hi - lo) * 0.08, hi * 0.0005, 0.0001);
-  const points = axis
-    ? series.map(([t, y]) => ({x: axis.x(t), y, label: exchangeTime(t, q.gmtoffset), valueLabel: formatPrice(y, q.market)}))
-    : series.map(([t, y], i) => ({x: i, y, label: localTime(t), valueLabel: formatPrice(y, q.market)}));
-  const slots = axis ? axis.slots : series.length - 1;
+  const points = series.map(([t, y], i) => ({x: axis ? axis.x(t) : i, y,
+    label: axis ? `${chosen.date} ${exchangeTime(t, chosen.offset)}` : localTime(t), valueLabel: formatPrice(y, q.market)}));
+  const slots = axis ? axis.slots : Math.max(1, series.length - 1);
   const labels = Array.from({length: slots + 1}, (_, i) => axis ? axis.labelAt(i) : localTime(series[Math.min(i, series.length - 1)][0]));
-  return {points, xDomain: [0, slots], yDomain: [lo - pad, hi + pad], labels};
+  return {points, xDomain: [0, slots], yDomain: [lo - pad, hi + pad], labels, baseline, date: chosen.date};
 }
 
 // ---------------------------------------------------------------- view
@@ -866,16 +915,19 @@ function sparkline(q, color, height, detail) {
       ? h("Column", {height, alignItems: "center", justify: "center"}, h("Text", {fontSize: 11, textColor: "textMuted"}, T.noChart))
       : h("Box", {grow: 1, basis: 0, minWidth: 0, height});
   }
-  return h("Chart", {
-    type: "area", height, curve: "linear", strokeWidth: detail ? 1.5 : 1.2, xKind: "category", labels: data.labels,
+  const dated = !detail && data.date && data.date !== exchangeDate(Date.now(), q);
+  const chart = h("Chart", {
+    type: "area", height: dated ? height - 10 : height, dots: data.points.length === 1, curve: "linear", strokeWidth: detail ? 1.5 : 1.2, xKind: "category", labels: data.labels,
     xDomain: data.xDomain, yDomain: data.yDomain, appear: false,
     ...(detail
       ? {grid: true, gridStyle: "dashed", hover: true, xTicks: 4, yTicks: 4, fillWidth: true}
       : {axes: false, grid: false, hover: false, grow: 1, basis: 0, minWidth: 0, ignoreInput: true}),
-    referenceLines: positive(q.previousClose)
-      ? [{value: q.previousClose, color: dark ? "#8E8E9370" : "#8E8E9359"}] : [],
+    referenceLines: positive(data.baseline)
+      ? [{value: data.baseline, color: dark ? "#8E8E9370" : "#8E8E9359"}] : [],
     series: [{name: q.symbol, color, fill: {from: 0.16, to: 0.01}, points: data.points}],
   });
+  return dated ? h("Column", {grow: 1, basis: 0, minWidth: 0, height, gap: 0}, chart,
+    h("Text", {fontSize: 8, textColor: "textMuted", singleLine: true}, data.date)) : chart;
 }
 
 function rowMenu(symbol, index) {
@@ -937,11 +989,7 @@ function footer(refresh) {
     h("Text", {fontSize: 11, textColor: "textMuted", singleLine: true, shrink: 1},
       failed ? T.failed : lastSuccess ? T.updated(localTime(lastSuccess)) : T.healthy),
     failed && Object.keys(quotes).length ? iconButton(ICON.refresh, T.retry, refresh, !!inFlight) : null,
-    h("Spacer"),
-    h("Row", {gap: 3, alignItems: "center", paddingX: 4, height: 20, radius: 5, tooltip: T.ctaTip,
-        hover: {background: "surfaceHover"}, onClick: () => $metrix.openURL(PULSE_URL + "footer")},
-      h("Text", {fontSize: 11, fontWeight: 500, textColor: "accent", singleLine: true}, failed ? "Pulse for Mac" : T.cta),
-      h("Icon", {svg: ICON.external, width: 10, height: 10, fontSize: 10, textColor: "accent", shrink: 0})));
+    h("Spacer"));
 }
 
 function skeletonRows() {
@@ -1022,7 +1070,7 @@ function detailView(q, refresh) {
             h("Text", {fontSize: 10.5, textColor: "textMuted"}, delayText ? `${q.source} · ${delayText}` : q.source),
             h("Text", {fontSize: 10.5, textColor: "textMuted", fontFeatures: "tnum"}, T.asOf(stale ? `${stale} ${quoteTime}` : quoteTime)))),
         h("Divider", {}),
-        section(q.market === "crypto" ? T.last24h : stale ? `${T.intraday} · ${stale}` : T.intraday),
+        section(q.market === "crypto" ? T.last24h : chartSession(q).date ? `${T.intraday} · ${chartSession(q).date}` : T.intraday),
         sparkline(q, color, 150, true),
         h("Divider", {}),
         section(T.marketData),
@@ -1032,17 +1080,7 @@ function detailView(q, refresh) {
           stat(T.low, q.low ? formatPrice(q.low, q.market) : "—"),
           stat(T.prevClose, q.previousClose ? formatPrice(q.previousClose, q.market) : "—"),
           stat(T.range, range),
-          stat(T.volume, formatVolume(q.volume))),
-        // Where the lite edition stops: point at what the full app adds for this ticker.
-        h("Row", {gap: 10, padding: 10, radius: 8, alignItems: "center", background: accentWash(),
-            hover: {background: accentWash(true)}, onClick: () => $metrix.openURL(PULSE_URL + "detail")},
-          h("Icon", {svg: LOGO, width: 18, height: 14, fontSize: 14, textColor: "accent", shrink: 0}),
-          h("Column", {gap: 2, grow: 1, basis: 0, minWidth: 0},
-            h("Text", {fontSize: 12, fontWeight: 600}, T.upsellTitle),
-            h("Text", {fontSize: 11, textColor: "textMuted", wrap: true}, T.upsellBody),
-            h("Row", {gap: 3, alignItems: "center", paddingTop: 2},
-              h("Text", {fontSize: 11, fontWeight: 600, textColor: "accent"}, T.upsellAction),
-              h("Icon", {svg: ICON.external, width: 10, height: 10, fontSize: 10, textColor: "accent", shrink: 0})))))));
+          stat(T.volume, formatVolume(q.volume))))));
 }
 
 function hint(text, props = {}) {
@@ -1133,8 +1171,6 @@ export default {
       error: stale || "",
       menu: [
         {label: T.refresh, onClick: refresh},
-        {separator: true},
-        {label: T.ctaMenu, onClick: () => $metrix.openURL(PULSE_URL + "menu")},
       ],
     };
 
